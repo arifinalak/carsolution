@@ -75,7 +75,10 @@ $slotStmt->execute([
     'id' => $appointmentId,
 ]);
 
-if ((int) $slotStmt->fetchColumn() >= 4) {
+$bookedByOthers = (int) $slotStmt->fetchColumn();
+$capacity = mechanic_total_slots($mechanicId, $appointmentDate);
+
+if ($bookedByOthers >= $capacity) {
     set_flash('Selected mechanic is fully booked for this date.', 'error');
     redirect('/admin/dashboard.php?date=' . urlencode($date));
 }

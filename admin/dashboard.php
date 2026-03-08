@@ -33,6 +33,12 @@ require __DIR__ . '/../includes/header.php';
         <h2>Admin Dashboard</h2>
         <a class="link-button" href="/admin/logout.php">Logout</a>
     </div>
+    <form method="get" action="/admin/dashboard.php" class="inline-filter">
+        <label>Date
+            <input type="date" name="date" value="<?= esc($date) ?>" min="<?= esc(date('Y-m-d')) ?>" required>
+        </label>
+        <button type="submit">View</button>
+    </form>
 </section>
 
 <section class="card">
@@ -42,15 +48,31 @@ require __DIR__ . '/../includes/header.php';
             <tr>
                 <th>Mechanic</th>
                 <th>Phone</th>
+                <th>Total Slots</th>
                 <th>Slots Left</th>
+                <th>Set Slots</th>
             </tr>
         </thead>
         <tbody>
         <?php foreach ($mechanics as $mechanic): ?>
+            <?php
+            $mechanicId = (int) $mechanic['id'];
+            $totalSlots = mechanic_total_slots($mechanicId, $date);
+            $slotsLeft = mechanic_slots_left($mechanicId, $date);
+            ?>
             <tr>
                 <td><?= esc($mechanic['name']) ?></td>
                 <td><?= esc($mechanic['phone']) ?></td>
-                <td><?= esc((string) mechanic_slots_left((int) $mechanic['id'], $date)) ?></td>
+                <td><?= esc((string) $totalSlots) ?></td>
+                <td><?= esc((string) $slotsLeft) ?></td>
+                <td>
+                    <form method="post" action="/admin/allocate_slots.php" class="status-form">
+                        <input type="hidden" name="mechanic_id" value="<?= esc((string) $mechanicId) ?>">
+                        <input type="hidden" name="slot_date" value="<?= esc($date) ?>">
+                        <input type="number" name="total_slots" value="<?= esc((string) $totalSlots) ?>" min="0" max="50" required>
+                        <button type="submit">Save</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -119,21 +141,6 @@ require __DIR__ . '/../includes/header.php';
         </table>
         </div>
     <?php endif; ?>
-</section>
-
-<section class="card small-card">
-    <h3>Add Mechanic</h3>
-    <form method="post" action="/admin/add_mechanic.php">
-        <label>Name
-            <input type="text" name="name" maxlength="100" required>
-        </label>
-
-        <label>Phone
-            <input type="text" name="phone" maxlength="30" required>
-        </label>
-
-        <button type="submit">Add</button>
-    </form>
 </section>
 
 <?php require __DIR__ . '/../includes/footer.php';

@@ -56,6 +56,9 @@ function bootstrap_database_schema(): void
     ];
 
     $serverPdo = new PDO($serverDsn, DB_USER, DB_PASS, $serverOptions);
+    $serverPdo->exec(sprintf('CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', DB_NAME));
+    $serverPdo->exec(sprintf('USE `%s`', DB_NAME));
+
     $schemaPath = __DIR__ . '/../db/schema.sql';
     $schemaSql = file_get_contents($schemaPath);
 
@@ -128,6 +131,40 @@ function ensure_default_mechanics(PDO $pdo): void
     }
 }
 
+function ensure_mechanic_slot_table(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS mechanic_daily_slots (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            mechanic_id INT NOT NULL,
+            slot_date DATE NOT NULL,
+            total_slots INT NOT NULL DEFAULT 4,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            CONSTRAINT fk_daily_slots_mechanic
+                FOREIGN KEY (mechanic_id) REFERENCES mechanics(id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            UNIQUE KEY uq_mechanic_date (mechanic_id, slot_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    // Auto-migrate older installs where this table exists without new columns.
+    $hasTotalSlotsStmt = $pdo->query("SHOW COLUMNS FROM mechanic_daily_slots LIKE 'total_slots'");
+    if (!$hasTotalSlotsStmt->fetch()) {
+        $pdo->exec('ALTER TABLE mechanic_daily_slots ADD COLUMN total_slots INT NOT NULL DEFAULT 4 AFTER slot_date');
+    }
+
+    $hasUpdatedAtStmt = $pdo->query("SHOW COLUMNS FROM mechanic_daily_slots LIKE 'updated_at'");
+    if (!$hasUpdatedAtStmt->fetch()) {
+        $pdo->exec('ALTER TABLE mechanic_daily_slots ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at');
+    }
+
+    $hasUniqueKeyStmt = $pdo->query("SHOW INDEX FROM mechanic_daily_slots WHERE Key_name = 'uq_mechanic_date'");
+    if (!$hasUniqueKeyStmt->fetch()) {
+        $pdo->exec('ALTER TABLE mechanic_daily_slots ADD UNIQUE KEY uq_mechanic_date (mechanic_id, slot_date)');
+    }
+}
+
 function render_database_error_page(string $message): void
 {
     http_response_code(500);
@@ -197,6 +234,7 @@ function db(): PDO
 
         ensure_default_admin_credentials($pdo);
         ensure_default_mechanics($pdo);
+        ensure_mechanic_slot_table($pdo);
     }
 
     return $pdo;
@@ -255,6 +293,8 @@ function valid_future_or_today_date(string $date): bool
 
 function mechanic_slots_left(int $mechanicId, string $date): int
 {
+    $capacity = mechanic_total_slots($mechanicId, $date);
+
     $stmt = db()->prepare(
         'SELECT COUNT(*) FROM appointments WHERE mechanic_id = :mechanic_id AND appointment_date = :appointment_date'
     );
@@ -264,7 +304,45 @@ function mechanic_slots_left(int $mechanicId, string $date): int
     ]);
 
     $booked = (int) $stmt->fetchColumn();
-    $capacity = 4;
 
     return max(0, $capacity - $booked);
+}
+
+function mechanic_total_slots(int $mechanicId, string $date): int
+{
+    $defaultCapacity = 4;
+
+    $stmt = db()->prepare(
+        'SELECT total_slots
+         FROM mechanic_daily_slots
+         WHERE mechanic_id = :mechanic_id AND slot_date = :slot_date
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'mechanic_id' => $mechanicId,
+        'slot_date' => $date,
+    ]);
+
+    $capacity = $stmt->fetchColumn();
+    if ($capacity === false) {
+        return $defaultCapacity;
+    }
+
+    return max(0, (int) $capacity);
+}
+
+function set_mechanic_daily_slots(int $mechanicId, string $date, int $totalSlots): void
+{
+    $totalSlots = max(0, $totalSlots);
+
+    $stmt = db()->prepare(
+        'INSERT INTO mechanic_daily_slots (mechanic_id, slot_date, total_slots)
+         VALUES (:mechanic_id, :slot_date, :total_slots)
+         ON DUPLICATE KEY UPDATE total_slots = VALUES(total_slots)'
+    );
+    $stmt->execute([
+        'mechanic_id' => $mechanicId,
+        'slot_date' => $date,
+        'total_slots' => $totalSlots,
+    ]);
 }

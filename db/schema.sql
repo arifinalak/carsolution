@@ -31,6 +31,19 @@ CREATE TABLE IF NOT EXISTS appointments (
     INDEX idx_car_date (car_reg_no, appointment_date)
 );
 
+CREATE TABLE IF NOT EXISTS mechanic_daily_slots (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    mechanic_id INT NOT NULL,
+    slot_date DATE NOT NULL,
+    total_slots INT NOT NULL DEFAULT 4,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_daily_slots_mechanic
+        FOREIGN KEY (mechanic_id) REFERENCES mechanics(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    UNIQUE KEY uq_mechanic_date (mechanic_id, slot_date)
+);
+
 INSERT INTO admins (username, password_hash)
 VALUES ('admin', '$2y$10$zYH4pJsrQK0QbQ1PcQnYz.0xy8ykQd3f5YwQ9m7l2f0BgA6IKBfA2')
 ON DUPLICATE KEY UPDATE username = username;
